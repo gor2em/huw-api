@@ -2,21 +2,13 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"time"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/joho/godotenv"
-)
-
-var (
-	DB                           *sql.DB
-	PRODUCTION_APP_ENV           string = "production"
-	DEVELOPMENT_ENVIRONMENT_FILE string = ".env.dev"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 )
 
 type Product struct {
@@ -27,83 +19,48 @@ type Product struct {
 	Description   string  `json:"description"`
 }
 
-func init() {
-	initEnv()
-
+func main() {
 	dbUser := os.Getenv("DB_USER")
 	dbPassword := os.Getenv("DB_PASSWORD")
 	dbHost := os.Getenv("DB_HOST")
 	dbPort := os.Getenv("DB_PORT")
 	dbName := os.Getenv("DB_NAME")
 
-	dbSource := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", dbUser, dbPassword, dbHost, dbPort, dbName)
-	var errDB error
-	DB, errDB = sql.Open("mysql", dbSource)
-	if errDB != nil {
-		log.Fatal(errDB)
-	}
-
-	errDB = DB.Ping()
-	if errDB != nil {
-		log.Fatal(errDB)
-	}
-
-}
-
-func initEnv() {
-	env := os.Getenv("APP_ENV")
-
-	if env != PRODUCTION_APP_ENV {
-
-		if err := godotenv.Load(DEVELOPMENT_ENVIRONMENT_FILE); err != nil {
-			fmt.Printf("failed to load environment variables: %v", err)
-			return
-		}
-
-		fmt.Println("=== LOADED ===", DEVELOPMENT_ENVIRONMENT_FILE)
-	} else {
-		fmt.Println("=== LOADED === ", PRODUCTION_APP_ENV)
-	}
-}
-
-func main() {
-	http.HandleFunc("/products", getProducts)
-
-	server := &http.Server{
-		Addr:         ":" + os.Getenv("APP_PORT"),
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-
-	log.Printf("Server listening on :%s", os.Getenv("APP_PORT"))
-	log.Fatal(server.ListenAndServe())
-}
-
-func getProducts(w http.ResponseWriter, r *http.Request) {
-	rows, err := DB.Query("SELECT * FROM products")
+	db, err := sql.Open("mysql", fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", dbUser, dbPassword, dbHost, dbPort, dbName))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		log.Fatal(err)
 	}
-	defer rows.Close()
+	defer db.Close()
 
-	var products []Product
-	for rows.Next() {
-		var product Product
-		err := rows.Scan(&product.ID, &product.Name, &product.Price, &product.StockQuantity, &product.Description)
+	app := fiber.New()
+
+	app.Use(cors.New())
+
+	app.Get("/products", func(c *fiber.Ctx) error {
+		rows, err := db.Query("SELECT * FROM products")
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+			log.Fatal(err)
 		}
-		products = append(products, product)
-	}
+		defer rows.Close()
 
-	if err := rows.Err(); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+		var products []Product
 
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(products)
+		for rows.Next() {
+			var product Product
+
+			err := rows.Scan(&product.ID, &product.Name, &product.Price, &product.StockQuantity, &product.Description)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			products = append(products, product)
+		}
+
+		return c.JSON(products)
+	})
+
+	err = app.Listen(":8000")
+	if err != nil {
+		log.Fatal(err)
+	}
 }

@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: huw-api
-          image: XXXX/test-swr/huw-api:v1
+          image: swr.tr-west-1.myhuaweicloud.com/test-swr/huw-api:latest
           resources:
             requests:
               cpu: 50m
@@ -24,6 +24,6 @@ spec:
               memory: 200Mi
           envFrom:
           - configMapRef:
-            name: huw-api-env            
+              name: huw-api-env            
       imagePullSecrets:
         - name: default-secret
